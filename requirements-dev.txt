@@ -1,0 +1,5 @@
+-r requirements.txt
+pandas>=2.2.0
+nltk>=3.8.0
+pdfplumber>=0.11.0
+pillow>=10.0.0

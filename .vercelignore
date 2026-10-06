@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+*.pyc
+__pycache__/
+venv/
+env/
+.vscode/
+.idea/
+dataset/generate_dataset.py
+train_model.py
+evaluate_model.py
+test_supabase.py
+*.log

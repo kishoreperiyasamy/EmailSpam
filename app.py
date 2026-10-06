@@ -1,7 +1,7 @@
 import os
-from flask import Flask, render_template, session
+from flask import Flask, render_template, session, jsonify
 from config import Config
-from database.connection import init_db
+from database.connection import init_db, is_database_configured
 from services.prediction_service import prediction_service
 from routes.auth_routes import auth_bp
 from routes.prediction_routes import predict_bp
@@ -10,15 +10,23 @@ from routes.admin_routes import admin_bp
 
 
 def create_app():
-    app = Flask(__name__)
+    base_dir = os.path.abspath(os.path.dirname(__file__))
+    app = Flask(
+        __name__,
+        template_folder=os.path.join(base_dir, 'templates'),
+        static_folder=os.path.join(base_dir, 'static'),
+        static_url_path='/static'
+    )
     app.config.from_object(Config)
 
-    # 1. Initialize Database Schema & Default Accounts
-    with app.app_context():
-        try:
-            init_db()
-        except Exception as e:
-            print(f"[App Warning] Failed to initialize database: {e}")
+    # 1. Initialize Database Schema (Non-blocking on Vercel cold-starts)
+    is_vercel = os.getenv('VERCEL') == '1' or os.getenv('VERCEL_ENV') is not None
+    if not is_vercel:
+        with app.app_context():
+            try:
+                init_db()
+            except Exception as e:
+                print(f"[App Warning] Database initialization deferred: {e}")
 
     # 2. Pre-warm Prediction Service (Model and Vectorizer in memory)
     try:
@@ -46,7 +54,33 @@ def create_app():
     app.register_blueprint(history_bp)
     app.register_blueprint(admin_bp)
 
-    # 5. Error Handlers
+    # 5. Diagnostic & Initialization Endpoints
+    @app.route('/api/health')
+    def health_check():
+        model_ready = prediction_service.model is not None and prediction_service.vectorizer is not None
+        return jsonify({
+            "status": "healthy",
+            "model_ready": model_ready,
+            "database_configured": is_database_configured(),
+            "serverless": is_vercel
+        })
+
+    @app.route('/api/init-db', methods=['GET', 'POST'])
+    def trigger_init_db():
+        """Allows one-click database schema creation from web in cloud deployments."""
+        try:
+            init_db()
+            return jsonify({
+                "success": True,
+                "message": "Database schema and default demo accounts initialized successfully."
+            })
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": f"Database initialization failed: {str(e)}"
+            }), 500
+
+    # 6. Error Handlers
     @app.errorhandler(404)
     def page_not_found(e):
         return render_template('base.html', not_found=True), 404
